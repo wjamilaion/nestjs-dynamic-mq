@@ -1,100 +1,121 @@
-import { DynamicModule, Module, Provider } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
+import { DynamicModule, Module, Provider, Type } from '@nestjs/common';
 import {
-  MessageQueueModuleOptions,
-  RedisConfig,
-  RabbitMQConfig,
-  QueueProcessorClass,
-} from './interface/message-queue.interface';
+  QueueModuleOptions,
+  QueueRootModuleOptions,
+  SharedQueueAsyncConfiguration,
+  SharedQueueConfigurationFactory,
+} from '.';
+import { getSharedConfigToken } from './utils/get-shared-config-token.util';
 
 @Module({})
-export class MessageQueueModule {
-  static register(options: MessageQueueModuleOptions): DynamicModule {
-    const { backend, queueName, redisConfig, rabbitmqConfig, processors } =
-      options;
-    let providers: Provider[] = [];
-
-    switch (backend) {
-      case 'redis':
-        providers = [
-          {
-            provide: 'QUEUE_BACKEND',
-            useValue: 'redis',
-          },
-          {
-            provide: 'QUEUE_CONFIG',
-            useValue: redisConfig,
-          },
-        ];
-        break;
-
-      case 'rabbitmq':
-        providers = [
-          {
-            provide: 'QUEUE_BACKEND',
-            useValue: 'rabbitmq',
-          },
-          {
-            provide: 'QUEUE_CONFIG',
-            useValue: rabbitmqConfig,
-          },
-        ];
-        break;
-    }
-
-    const queueProcessorsProviders = processors.map((processor, index) => ({
-      provide: `QUEUE_PROCESSOR_${index}`,
-      useClass: processor,
-    }));
+export class MQModule {
+  static forRoot(option: QueueRootModuleOptions): DynamicModule {
+    const { redis } = option;
 
     return {
-      module: MessageQueueModule,
+      module: MQModule,
       imports: [
-        BullModule.registerQueueAsync({
-          name: queueName,
-          useFactory: async (
-            backend: string,
-            config: RedisConfig | RabbitMQConfig,
-          ) => {
-            switch (backend) {
-              default:
-              case 'redis':
-                return {
-                  redis: { ...(config as RedisConfig) },
-                  // processors: [...processors]
-                };
-              case 'rabbitmq':
-                return {
-                  // processors: [...processors],
-                  options: { ...(config as RabbitMQConfig) },
-                };
-            }
-          },
-          inject: ['QUEUE_BACKEND', 'QUEUE_CONFIG'],
+        BullModule.forRoot({
+          redis: redis,
         }),
-      ],
-      providers: [
-        ...providers,
-        ...queueProcessorsProviders,
-        ...this.createProcessorsMetadata(processors),
-        { provide: 'QUEUE_NAME', useValue: options.queueName }, // Add this line to provide the queue name
-      ],
-      exports: [
-        ...providers,
-        ...queueProcessorsProviders,
-        ...this.createProcessorsMetadata(processors),
-        'QUEUE_NAME',
       ],
     };
   }
+  /**
+   * Registers a globally available configuration for all queues.
+   *
+   * @param asyncQueueConfig shared queue configuration async factory
+   */
+  static forRootAsync(
+    asyncQueueConfig: SharedQueueAsyncConfiguration,
+  ): DynamicModule;
+  /**
+   * Registers a globally available configuration under a specified "configKey".
+   *
+   * @param configKey a key under which the configuration should be available
+   * @param asyncQueueConfig shared bull configuration async factory
+   */
+  static forRootAsync(
+    configKey: string,
+    asyncQueueConfig: SharedQueueAsyncConfiguration,
+  ): DynamicModule;
+  /**
+   * Registers a globally available configuration for all queues
+   * or using a specified "configKey" (if passed).
+   *
+   * @param keyOrAsyncConfig a key under which the configuration should be available or a bull configuration object
+   * @param asyncBullConfig shared bull configuration async factory
+   */
+  static forRootAsync(
+    keyOrAsyncConfig: string | SharedQueueAsyncConfiguration,
+    asyncBullConfig?: SharedQueueAsyncConfiguration,
+  ): DynamicModule {
+    const [configKey, asyncSharedBullConfig] =
+      typeof keyOrAsyncConfig === 'string'
+        ? [keyOrAsyncConfig, asyncBullConfig]
+        : [undefined, keyOrAsyncConfig];
 
-  private static createProcessorsMetadata(
-    processors: QueueProcessorClass[],
+    const providers = this.createAsyncSharedConfigurationProviders(
+      configKey,
+      asyncSharedBullConfig,
+    );
+
+    return {
+      global: true,
+      module: MQModule,
+      imports: asyncSharedBullConfig.imports,
+      providers: providers,
+      exports: providers,
+    };
+  }
+  private static createAsyncSharedConfigurationProviders(
+    configKey: string | undefined,
+    options: SharedQueueAsyncConfiguration,
   ): Provider[] {
-    return processors.map((processor, index) => ({
-      provide: processor,
-      useFactory: (queueName: string) => new processor(queueName),
-      inject: ['QUEUE_NAME'],
+    if (options.useExisting || options.useFactory) {
+      return [this.createAsyncSharedConfigurationProvider(configKey, options)];
+    }
+    const useClass = options.useClass as Type<SharedQueueConfigurationFactory>;
+    return [
+      this.createAsyncSharedConfigurationProvider(configKey, options),
+      {
+        provide: useClass,
+        useClass,
+      },
+    ];
+  }
+  private static createAsyncSharedConfigurationProvider(
+    configKey: string | undefined,
+    options: SharedQueueAsyncConfiguration,
+  ): Provider {
+    if (options.useFactory) {
+      return {
+        provide: getSharedConfigToken(configKey),
+        useFactory: options.useFactory,
+        inject: options.inject || [],
+      };
+    }
+    // `as Type<SharedBullConfigurationFactory>` is a workaround for microsoft/TypeScript#31603
+    const inject = [
+      (options.useClass ||
+        options.useExisting) as Type<SharedQueueConfigurationFactory>,
+    ];
+    return {
+      provide: getSharedConfigToken(configKey),
+      useFactory: async (optionsFactory: SharedQueueConfigurationFactory) =>
+        optionsFactory.createSharedConfiguration(),
+      inject,
+    };
+  }
+
+  static registerQueue(...options: QueueModuleOptions[]): DynamicModule {
+    const queues = options.map(x => ({
+      name: x.name,
     }));
+    return {
+      module: MQModule,
+      imports: [BullModule.registerQueue(...queues)],
+    };
   }
 }

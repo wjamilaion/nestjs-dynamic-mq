@@ -1,26 +1,40 @@
-// Interface for Redis configuration
-export interface RedisConfig {
-  host: string;
-  port: number;
+import * as Redis from 'ioredis';
+import { Queue } from 'bull';
+import { FactoryProvider, ModuleMetadata, Type } from '@nestjs/common';
+
+export interface QueueRootModuleOptions {
+  redis?: Redis.RedisOptions | string | undefined;
+}
+export interface QueueModuleOptions {
+  name: string;
 }
 
-// Interface for RabbitMQ configuration
-export interface RabbitMQConfig {
-  uri: string;
-  exchanges: { name: string; type: string }[];
+export { Queue };
+
+export interface SharedQueueConfigurationFactory {
+  createSharedConfiguration():
+    | Promise<QueueRootModuleOptions>
+    | QueueRootModuleOptions;
 }
 
-// Interface for defining Queue Processor classes
-// export type QueueProcessorClass = string | BullQueueProcessorCallback | BullQueueAdvancedProcessor | BullQueueSeparateProcessor | BullQueueAdvancedSeparateProcessor;;
-// Interface for defining Queue Processor classes
-export interface QueueProcessorClass {
-  new (...args: any[]): any;
-}
-// Interface for Bull Queue Module configuration options
-export interface MessageQueueModuleOptions {
-  backend: 'redis' | 'rabbitmq';
-  queueName: string;
-  redisConfig?: RedisConfig;
-  rabbitmqConfig?: RabbitMQConfig;
-  processors: QueueProcessorClass[];
+export interface SharedQueueAsyncConfiguration
+  extends Pick<ModuleMetadata, 'imports'> {
+  /**
+   * Existing Provider to be used.
+   */
+  useExisting?: Type<SharedQueueConfigurationFactory>;
+  /**
+   * Type (class name) of provider (instance to be registered and injected).
+   */
+  useClass?: Type<SharedQueueConfigurationFactory>;
+  /**
+   * Factory function that returns an instance of the provider to be injected.
+   */
+  useFactory?: (
+    ...args: any[]
+  ) => Promise<QueueRootModuleOptions> | QueueRootModuleOptions;
+  /**
+   * Optional list of providers to be injected into the context of the Factory function.
+   */
+  inject?: FactoryProvider['inject'];
 }
