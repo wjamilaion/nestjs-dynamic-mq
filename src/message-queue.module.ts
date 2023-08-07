@@ -113,10 +113,22 @@ export class MQModule {
     const queues = options.map(x => ({
       name: x.name,
     }));
+    const providers = this.getUniqProviders(options);
     return {
       module: MQModule,
       imports: [BullModule.registerQueue(...queues)],
-      // providers: []
+      providers: providers,
+      exports: providers
     };
+  }
+  private static getUniqProviders(
+    options: Array<QueueModuleOptions>,
+  ) {
+    return (
+      options
+        .map((option) => option.processors)
+        .reduce((acc, i) => acc.concat(i || []), [])
+        .filter((v, i, a) => a.indexOf(v) === i) || []
+    );
   }
 }

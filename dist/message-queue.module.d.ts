@@ -7,4 +7,5 @@ export declare class MQModule {
     private static createAsyncSharedConfigurationProviders;
     private static createAsyncSharedConfigurationProvider;
     static registerQueue(...options: QueueModuleOptions[]): DynamicModule;
+    private static getUniqProviders;
 }
