@@ -116,6 +116,7 @@ export class MQModule {
     return {
       module: MQModule,
       imports: [BullModule.registerQueue(...queues)],
+      // providers: []
     };
   }
 }

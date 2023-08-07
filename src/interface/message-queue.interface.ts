@@ -1,12 +1,26 @@
 import * as Redis from 'ioredis';
 import { Queue } from 'bull';
 import { FactoryProvider, ModuleMetadata, Type } from '@nestjs/common';
+import { BullQueueProcessor } from '@nestjs/bull';
+
+export type QueueProcessor = BullQueueProcessor;
 
 export interface QueueRootModuleOptions {
   redis?: Redis.RedisOptions | string | undefined;
 }
 export interface QueueModuleOptions {
   name: string;
+    /**
+   * Shared configuration key
+   *
+   * @default default
+   */
+    configKey?: string;
+
+    /**
+     * Additional queue processors
+     */
+    processors?: QueueProcessor[];
 }
 
 export { Queue };
